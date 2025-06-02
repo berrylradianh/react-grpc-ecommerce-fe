@@ -1,10 +1,11 @@
 import { yupResolver } from '@hookform/resolvers/yup';
+import { RpcError } from '@protobuf-ts/runtime-rpc';
 import { useForm } from 'react-hook-form';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import * as yup from 'yup';
+import { getAuthClient } from '../../api/grpc/client';
 import FormInput from '../../components/FormInput/FormInput';
-
 
 const loginSchema = yup.object().shape({
     email: yup.string().email('Email tidak valid').required('Alamat email wajib diisi'),
@@ -17,17 +18,57 @@ interface LoginFormValues {
 }
 
 const Login = () => {
-    const form  = useForm<LoginFormValues>({
+    const navigate = useNavigate();
+    const form = useForm<LoginFormValues>({
         resolver: yupResolver(loginSchema)
     });
 
-    const submitHandler = (values: LoginFormValues) => {
-        console.log(values);
-        Swal.fire({
-            icon : 'success',
-            title: 'Login Berhasil',
-            confirmButtonText: 'Ok'
-        });
+    const submitHandler = async (values: LoginFormValues) => {
+        try {
+            const client = getAuthClient();
+            const res = await client.login({
+                email: values.email,
+                password: values.password
+            });
+
+            if (res.response.base?.isError || !res.response.accessToken || typeof res.response.accessToken !== 'string' || res.response.accessToken.trim() === '') {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Login Gagal',
+                    text: "Silahkan periksa alamat email dan kata sandi",
+                    confirmButtonText: 'Ok'
+                });
+                return;
+            }
+
+
+            localStorage.setItem('access_token', res.response.accessToken);
+            navigate('/');
+            Swal.fire({
+                icon: 'success',
+                title: 'Login Berhasil',
+                confirmButtonText: 'Ok'
+            });
+        } catch (e) {
+            if (e instanceof RpcError) {
+                if (e.code == 'UNAUTHENTICATED') {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Login Gagal',
+                        text: "Silahkan periksa alamat email dan kata sandi",
+                        confirmButtonText: 'Ok'
+                    });
+                    return;
+                }
+            }
+
+            Swal.fire({
+                icon: 'error',
+                title: 'Login Gagal',
+                text: "Silahkan coba beberapa saat lagi",
+                confirmButtonText: 'Ok'
+            });
+        }
     };
     return (
         <div className="login-section">
